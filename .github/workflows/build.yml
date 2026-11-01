@@ -20,23 +20,39 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Install Android SDK 34
+        run: |
+          SM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SM" --licenses > /dev/null || true
+          "$SM" "platforms;android-34" "build-tools;34.0.0" > /dev/null || true
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.7
 
       - name: Build debug APK
         run: |
+          set -o pipefail
           if [ ! -f settings.gradle.kts ]; then
             for z in *.zip; do unzip -oq "$z"; done
             cd Debloater
           fi
-          gradle assembleDebug --no-daemon --stacktrace
+          gradle assembleDebug --no-daemon --console=plain 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/Debloater.apk"
 
+      - name: Show errors
+        if: failure()
+        run: |
+          echo "=========== ГЛАВНАЯ ОШИБКА ==========="
+          grep -E "^e: |What went wrong|Execution failed|Could not |error:" -A6 build.log | head -80 || true
+
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: Debloater-apk
-          path: Debloater.apk
+          name: build-log-and-apk
+          path: |
+            Debloater.apk
+            build.log
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
